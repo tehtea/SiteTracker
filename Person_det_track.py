@@ -1,21 +1,24 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """@author: ambakick
 """
 
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 import glob
 #from moviepy.editor import VideoFileClip
 from collections import deque
 from sklearn.utils.linear_assignment_ import linear_assignment
+# from scipy.optimize import linear_sum_assignment
 
 import helpers
 import detector
 import tracker
 import cv2
+import logging
 
-# Global variables to be used by funcitons of VideoFileClop
+# Global variables to be used by functions of VideoFileClip
 frame_count = 0 # frame counter
 
 max_age = 15  # no.of consecutive unmatched detection before 
@@ -23,11 +26,22 @@ max_age = 15  # no.of consecutive unmatched detection before
 
 min_hits =1  # no. of consecutive matches needed to establish a track
 
-tracker_list =[] # list for trackers
-# list for track ID
-track_id_list= deque(['1', '2', '3', '4', '5', '6', '7', '7', '8', '9', '10'])
+tracker_list =[] # list for trackers, shared across multiple frames
 
+# list for track ID
+track_id_list= deque([str(i) for i in range(1, 21)])
+
+# debug = True
 debug = False
+
+for handler in logging.root.handlers[:]:
+    logging.root.removeHandler(handler)
+logging.basicConfig(filename='C:\\Users\\tehtea\\Person-Detection-and-Tracking\\demo.log', level=logging.INFO)
+
+
+def assign_color(id):
+    colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), (0, 255, 255), (255, 255, 255)]
+    return colors[id % len(colors)]
 
 def assign_detections_to_trackers(trackers, detections, iou_thrd = 0.3):
     '''
@@ -36,17 +50,20 @@ def assign_detections_to_trackers(trackers, detections, iou_thrd = 0.3):
     '''    
     
     IOU_mat= np.zeros((len(trackers),len(detections)),dtype=np.float32)
+    # at the end of this loop, each tracker box should be paired with all detection boxes, with the corresponding IOU score stored at that position.
     for t,trk in enumerate(trackers):
         #trk = convert_to_cv2bbox(trk) 
         for d,det in enumerate(detections):
          #   det = convert_to_cv2bbox(det)
-            IOU_mat[t,d] = helpers.box_iou2(trk,det) 
+            IOU_mat[t,d] = helpers.box_iou2(trk,det) # get IOU score of tracker box and detection box.
     
-    # Produces matches       
-    # Solve the maximizing the sum of IOU assignment problem using the
-    # Hungarian algorithm (also known as Munkres algorithm)
+    # Matching the tracker boxes to each detection now becomes an Assignment Problem. To solve this,
+    # use the Hungarian algorithm (also known as Munkres algorithm)
     
-    matched_idx = linear_assignment(-IOU_mat)        
+    # The IOU_mat creates a very useful real-valued matrix C. The cost function used was the IOU.
+    # return matches as a pair. Tracker on left side, Detection on right side.   
+    IOU_mat = 1 / (IOU_mat + 1) # offset by 1 to prevent division by zero
+    matched_idx = linear_assignment(IOU_mat)
 
     unmatched_trackers, unmatched_detections = [], []
     for t,trk in enumerate(trackers):
@@ -73,54 +90,51 @@ def assign_detections_to_trackers(trackers, detections, iou_thrd = 0.3):
     if(len(matches)==0):
         matches = np.empty((0,2),dtype=int)
     else:
-        matches = np.concatenate(matches,axis=0)
-    
-    return matches, np.array(unmatched_detections), np.array(unmatched_trackers)       
-    
+        matches = np.concatenate(matches,axis=0) # need make sure it is a numpy array
 
+    return matches, np.array(unmatched_detections), np.array(unmatched_trackers)       
 
 def pipeline(img):
     '''
     Pipeline function for detection and tracking
     '''
     global frame_count
-    global tracker_list
     global max_age
     global min_hits
     global track_id_list
     global debug
-    
+    global tracker_list
+
     frame_count+=1
     
-    img_dim = (img.shape[1], img.shape[0])
-    z_box = det.get_localization(img) # measurement
+    z_box = det.get_localization(img) # get the location of each detected person in current image.
     if debug:
        print('Frame:', frame_count)
        
-    x_box =[]
+    x_box =[] # stores a list of boxes by each tracker
     if debug: 
         for i in range(len(z_box)):
-           img1= helpers.draw_box_label(img, z_box[i], box_color=(255, 0, 0))
+           img1= helpers.draw_box_label(i, img, z_box[i], box_color=assign_color(i))
            plt.imshow(img1)
         plt.show()
-    
+
     if len(tracker_list) > 0:
         for trk in tracker_list:
             x_box.append(trk.box)
     
-    
     matched, unmatched_dets, unmatched_trks \
-    = assign_detections_to_trackers(x_box, z_box, iou_thrd = 0.3)  
+    = assign_detections_to_trackers(x_box, z_box, iou_thrd = 0.3) # 'matched' is an array of IDs that pairs a matched object in array with a tracker in the array
+        
     if debug:
-         print('Detection: ', z_box)
-         print('x_box: ', x_box)
-         print('matched:', matched)
-         print('unmatched_det:', unmatched_dets)
-         print('unmatched_trks:', unmatched_trks)
+        print('Detection: ', z_box)
+        print('x_box: ', x_box)
+        print('matched:', matched)
+        print('unmatched_det:', unmatched_dets)
+        print('unmatched_trks:', unmatched_trks)
     
          
     # Deal with matched detections     
-    if matched.size >0:
+    if matched.size>0:
         for trk_idx, det_idx in matched:
             z = z_box[det_idx]
             z = np.expand_dims(z, axis=0).T
@@ -146,7 +160,7 @@ def pipeline(img):
             xx =[xx[0], xx[2], xx[4], xx[6]]
             tmp_trk.box = xx
             tmp_trk.id = track_id_list.popleft() # assign an ID for the tracker
-            print(tmp_trk.id)
+            # print(tmp_trk.id)
             tracker_list.append(tmp_trk)
             x_box.append(xx)
     
@@ -178,7 +192,7 @@ def pipeline(img):
     deleted_tracks = filter(lambda x: x.no_losses >max_age, tracker_list)  
     
     for trk in deleted_tracks:
-            track_id_list.append(trk.id)
+        track_id_list.append(trk.id)
     
     tracker_list = [x for x in tracker_list if x.no_losses<=max_age]
     
@@ -195,36 +209,34 @@ if __name__ == "__main__":
     
     if debug: # test on a sequence of images
         images = [plt.imread(file) for file in glob.glob('./test_images/*.jpg')]
-        
+        matplotlib.use("TkAgg")
         for i in range(len(images))[0:7]:
-             image = images[i]
-             image_box = pipeline(image)   
-             plt.imshow(image_box)
-             plt.show()
-           
-    else: # test on a video file.
+            image = images[i]
+            image_box = pipeline(image)   
+            plt.figure()
+            plt.imshow(image_box)
+        plt.show()
         
-        # start=time.time()
-        # output = 'test_v7.mp4'
-        # clip1 = VideoFileClip("project_video.mp4")#.subclip(4,49) # The first 8 seconds doesn't have any cars...
-        # clip = clip1.fl_image(pipeline)
-        # clip.write_videofile(output, audio=False)
-        # end  = time.time()
-        cap = cv2.VideoCapture(0)
+    else: # test on a video file.
+        try:
+            cap = cv2.VideoCapture(0)
+        except: # usually an issue with running from RPI
+            cap = cv2.VideoCapture(-1)
         fourcc = cv2.VideoWriter_fourcc(*'XVID')
         out = cv2.VideoWriter('output.avi',fourcc, 8.0, (640,480))
 
         while(True):
-            
+            logging.info('startingFrame')
             ret, img = cap.read()
             #print(img)
             
             np.asarray(img)
             new_img = pipeline(img)
             out.write(new_img)
+            logging.info('endingFrame')
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
             
         cap.release()
         cv2.destroyAllWindows()
-        print(round(end-start, 2), 'Seconds to finish')
+        # print(round(end-start, 2), 'Seconds to finish')

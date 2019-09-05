@@ -7,8 +7,15 @@ import tensorflow as tf
 from PIL import Image
 import os
 from matplotlib import pyplot as plt
+import matplotlib
 import time
 from glob import glob
+import logging
+
+import helpers
+
+NON_MAXIMUM_SUPPRESSION_THRESHOLD = 0.2
+
 cwd = os.path.dirname(os.path.realpath(__file__))
 
 # Uncomment the following two lines if need to use the visualization_tunitls
@@ -116,9 +123,9 @@ class PersonDetector(object):
     
               cls = classes.tolist()
               
-              # The ID for car is 3 
-              idx_vec = [i for i, v in enumerate(cls) if ((v==1) and (scores[i]>0.3))]
-              
+              # The ID for person is 1
+              idx_vec = [i for i, v in enumerate(cls) if ((v==1) and (scores[i]>0.5))]
+              filtered_scores = [i for i, v in enumerate(scores.tolist()) if i in idx_vec]
               if len(idx_vec) ==0:
                   print('no detection!')
               else:
@@ -126,38 +133,123 @@ class PersonDetector(object):
                   for idx in idx_vec:
                       dim = image.shape[0:2]
                       box = self.box_normal_to_pixel(boxes[idx], dim)
-                      box_h = box[2] - box[0]
-                      box_w = box[3] - box[1]
+                      box_h = box[2] - box[0] # that means box[2] is y1, box[0] is y2
+                      box_w = box[3] - box[1] # that means box[3] is x2, box[1] is x1
                       ratio = box_h/(box_w + 0.01)
                       
                       #if ((ratio < 0.8) and (box_h>20) and (box_w>20)):
                       tmp_car_boxes.append(box)
-                      print(box, ', confidence: ', scores[idx], 'ratio:', ratio)
+                      logging.info('{} , confidence: {} ratio: {}'.format(box, scores[idx], ratio))
                       '''   
                       else:
                           print('wrong ratio or wrong size, ', box, ', confidence: ', scores[idx], 'ratio:', ratio)
                       '''    
-                          
+                  # non-maximum suppression - cluster overlapping boxes first, then in each cluster, pick the box with highest confidence
+                  # to cluster overlapping boxes, loop through the list of boxes and create cluster if the pair is not found together yet. 
+                  box_clusters = []
+                  indices_to_remove = []
+                  for i in range(len(tmp_car_boxes)):
+                      for j in range(len(tmp_car_boxes)):
+                          if (i == j):
+                              continue
+                          else:
+                              tmp_box_one = tmp_car_boxes[i]
+                              tmp_box_two = tmp_car_boxes[j]
+                            #   tmp_box_one = get_iou_adapter(tmp_car_boxes[i])
+                            #   tmp_box_two = get_iou_adapter(tmp_car_boxes[j])
+                              iou = get_iou(tmp_box_one, tmp_box_two)
+                            #   print(iou)
+                              if (iou > NON_MAXIMUM_SUPPRESSION_THRESHOLD):
+                                  tmp_box_one_confidence = filtered_scores[i]
+                                  tmp_box_two_confidence = filtered_scores[j]
+                                  if (tmp_box_one_confidence > tmp_box_two_confidence):
+                                      indices_to_remove.append(j)
+                                  else:
+                                      indices_to_remove.append(i)
+                  indices_to_remove = set(indices_to_remove) # remove duplicates
+                  filtered_boxes = [tmp_car_boxes[i] for i in range(len(tmp_car_boxes)) if i not in indices_to_remove]
+                                #   both_found_in_box_clusters = False
+                                #   one_found_in_box_cluster = False
+                                #   for cluster in box_clusters:
+                                #       if tmp_box_one in cluster and tmp_box_two in cluster:
+                                #           both_found_in_box_clusters = True
+                                #           break
+                                #       elif tmp_box_one in cluster or tmp_box_two in cluster:
+                                #           one_found_in_box_cluster = True
+                                #   if (not both_found_in_box_clusters):
+                                #       box_clusters.append(tmp_box_one, tmp_box_two)
+
+                            #       for  
+                  if (len(filtered_boxes) != len(tmp_car_boxes)):
+                      logging.info('Non-maximum suppression removed {} detections'.format(len(tmp_car_boxes) - len(filtered_boxes)))
                   
-                  self.car_boxes = tmp_car_boxes
+                  self.car_boxes = filtered_boxes
              
         return self.car_boxes
-        
+
+# converts a box to the pattern that get_iou expects
+def get_iou_adapter(box):
+    return [box[1], box[2], box[3], box[0]]
+    
+def get_iou(a, b, epsilon=1e-5):
+    """ Given two boxes `a` and `b` defined as a list of four numbers:
+            [x1,y1,x2,y2]
+        where:
+            x1,y1 represent the upper left corner
+            x2,y2 represent the lower right corner
+        It returns the Intersect of Union score for these two boxes.
+
+    Args:
+        a:          (list of 4 numbers) [x1,y1,x2,y2]
+        b:          (list of 4 numbers) [x1,y1,x2,y2]
+        epsilon:    (float) Small value to prevent division by zero
+
+    Returns:
+        (float) The Intersect of Union score.
+    """
+    # COORDINATES OF THE INTERSECTION BOX
+    x1 = max(a[0], b[0])
+    y1 = max(a[1], b[1])
+    x2 = min(a[2], b[2])
+    y2 = min(a[3], b[3])
+
+    # AREA OF OVERLAP - Area where the boxes intersect
+    width = (x2 - x1)
+    height = (y2 - y1)
+    # handle case where there is NO overlap
+    if (width<0) or (height <0):
+        return 0.0
+    area_overlap = width * height
+
+    # COMBINED AREA
+    area_a = (a[2] - a[0]) * (a[3] - a[1])
+    area_b = (b[2] - b[0]) * (b[3] - b[1])
+    area_combined = area_a + area_b - area_overlap
+
+    # RATIO OF AREA OF OVERLAP OVER COMBINED AREA
+    iou = area_overlap / (area_combined+epsilon)
+    return iou
+
+
 if __name__ == '__main__':
-        
-        det =CarDetector()
+        matplotlib.use("TkAgg")
+        det = PersonDetector()
         os.chdir(cwd)
         TEST_IMAGE_PATHS= glob(os.path.join('test_images/', '*.jpg'))
-        
-        for i, image_path in enumerate(TEST_IMAGE_PATHS[0:2]):
+        # print(len(TEST_IMAGE_PATHS))
+        for i, image_path in enumerate(TEST_IMAGE_PATHS):
             print('')
             print('*************************************************')
             
             img_full = Image.open(image_path)
             img_full_np = det.load_image_into_numpy_array(img_full)
-            img_full_np_copy = np.copy(img_full_np)
             start = time.time()
             b = det.get_localization(img_full_np, visual=False)
+            for i in range(len(b)):
+                img1 = helpers.draw_box_label(i, img_full_np, b[i], box_color=(255, 0, 0))
+                plt.imshow(img1)
+            plt.show()
+
             end = time.time()
             print('Localization time: ', end-start)
 #            

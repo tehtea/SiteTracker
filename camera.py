@@ -11,7 +11,8 @@ from io import StringIO
 from matplotlib import pyplot as plt
 from PIL import Image
 
-if tf.__version__ < '1.4.0':
+if int((tf.__version__).split('.')[1]) < 4:
+  print('Tensorflow version: {}'.format(tf.__version__))
   raise ImportError('Please upgrade your tensorflow installation to v1.4.* or later!')
 
 # This is needed to display the images.
