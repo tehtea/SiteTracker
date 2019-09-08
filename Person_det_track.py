@@ -34,6 +34,8 @@ track_id_list= deque([str(i) for i in range(1, 21)])
 # debug = True
 debug = False
 
+VIDEO_TEST = True # test with a video file
+
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
 logging.basicConfig(filename='C:\\Users\\tehtea\\Person-Detection-and-Tracking\\demo.log', level=logging.INFO)
@@ -216,18 +218,21 @@ if __name__ == "__main__":
             plt.figure()
             plt.imshow(image_box)
         plt.show()
-        
     else: # test on a video file.
         try:
             cap = cv2.VideoCapture(0)
         except: # usually an issue with running from RPI
             cap = cv2.VideoCapture(-1)
+        if (VIDEO_TEST):
+            cap = cv2.VideoCapture(r'./test_data/construction_footage.mp4')
         fourcc = cv2.VideoWriter_fourcc(*'XVID')
         out = cv2.VideoWriter('output.avi',fourcc, 8.0, (640,480))
 
         while(True):
             logging.info('startingFrame')
             ret, img = cap.read()
+            if (image.size < 0 or image.size < 0):
+                break
             #print(img)
             
             np.asarray(img)
