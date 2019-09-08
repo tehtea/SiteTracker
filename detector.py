@@ -4,6 +4,7 @@ Script to test traffic light localization and detection
 
 import numpy as np
 import tensorflow as tf
+from tensorflow.lite.python.interpreter import Interpreter
 from PIL import Image
 import cv2
 import os
@@ -70,7 +71,7 @@ class PersonDetector(object):
         PATH_TO_CKPT = detect_model_name + '/detect.tflite'
 
         # Define lite graph and Load Tensorflow Lite model into memory
-        self.interpreter = tf.lite.Interpreter(
+        self.interpreter = Interpreter(
             model_path=PATH_TO_CKPT)
         self.interpreter.allocate_tensors()
         self.input_details = self.interpreter.get_input_details()
