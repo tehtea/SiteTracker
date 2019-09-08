@@ -89,7 +89,7 @@ class PersonDetector(object):
         box_pixel = [int(box[0]*height), int(box[1]*width), int(box[2]*height), int(box[3]*width)]
         return np.array(box_pixel)       
 
-    def get_localization(self, image, visual=False, threshold=0.4):  
+    def get_localization(self, image, visual=False, threshold=0.3):  
         category_index={1: {'id': 1, 'name': u'person'},
                         2: {'id': 2, 'name': u'bicycle'},
                         3: {'id': 3, 'name': u'car'},
@@ -131,7 +131,7 @@ class PersonDetector(object):
         cls = classes.tolist()
         
         # The ID for person is 1
-        idx_vec = [i for i, v in enumerate(cls) if ((v==0) and (scores[i]>0.5))]
+        idx_vec = [i for i, v in enumerate(cls) if ((v==0) and (scores[i]>threshold))]
         filtered_scores = [i for i, v in enumerate(scores.tolist()) if i in idx_vec]
         if len(idx_vec) ==0:
             print('no detection!')

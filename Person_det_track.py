@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""@author: ambakick
-"""
 
 import numpy as np
 import matplotlib
@@ -21,7 +19,7 @@ import logging
 # Global variables to be used by functions of VideoFileClip
 frame_count = 0 # frame counter
 
-max_age = 3  # no.of consecutive unmatched detection before 
+max_age = 10  # no.of consecutive unmatched detection before 
              # a track is deleted
 
 min_hits = 2  # no. of consecutive matches needed to establish a track
@@ -38,7 +36,7 @@ VIDEO_TEST = True # test with a video file
 
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
-logging.basicConfig(filename='C:\\Users\\tehtea\\Person-Detection-and-Tracking\\demo.log', level=logging.INFO)
+logging.basicConfig(filename='demo.log', level=logging.INFO)
 
 
 def assign_color(id):
@@ -109,7 +107,11 @@ def pipeline(img):
 
     frame_count+=1
     
-    z_box = det.get_localization(img) # get the location of each detected person in current image.
+    if (frame_count % 3):
+        z_box = det.get_localization(img) # get the location of each detected person in current image.
+    else:
+        z_box = []
+
     if debug:
        print('Frame:', frame_count)
        
@@ -202,7 +204,6 @@ def pipeline(img):
        print('Ending tracker_list: ',len(tracker_list))
        print('Ending good tracker_list: ',len(good_tracker_list))
     
-    cv2.imshow("frame",img)
     return img
     
 if __name__ == "__main__":    
@@ -220,13 +221,18 @@ if __name__ == "__main__":
         plt.show()
     else: # test on a video file.
         try:
-            cap = cv2.VideoCapture(0)
+            if (VIDEO_TEST):
+                cap = cv2.VideoCapture(r'./test_data/construction_footage.mp4')
+            else:
+                cap = cv2.VideoCapture(0)
         except: # usually an issue with running from RPI
             cap = cv2.VideoCapture(-1)
-        if (VIDEO_TEST):
-            cap = cv2.VideoCapture(r'./test_data/construction_footage.mp4')
+        frame_width = int(cap.get(3))
+        frame_height = int(cap.get(4))
         fourcc = cv2.VideoWriter_fourcc(*'XVID')
-        out = cv2.VideoWriter('output.avi',fourcc, 8.0, (640,480))
+        # fourcc = cv2.VideoWriter_fourcc('M','J','P','G')
+        # out = cv2.VideoWriter('output.avi',fourcc, 8.0, (640,480))
+        out = cv2.VideoWriter('output.avi',fourcc, 8.0, (frame_width,frame_height))
 
         while(True):
             logging.info('startingFrame')
@@ -234,13 +240,16 @@ if __name__ == "__main__":
             if not ret:
                 break
             
-            np.asarray(img)
+            # np.asarray(img)
             new_img = pipeline(img)
             out.write(new_img)
             logging.info('endingFrame')
+            cv2.imshow("frame",new_img)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
             
         cap.release()
+        out.release()
+
         cv2.destroyAllWindows()
         # print(round(end-start, 2), 'Seconds to finish')
